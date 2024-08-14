@@ -14,7 +14,8 @@ if __name__ == '__main__':
     np.random.seed(hparams.seed)
     torch.manual_seed(hparams.seed)
 
-    logger = WandbLogger(name=hparams.run_name,
+    logger = WandbLogger(
+        # name=hparams.run_name,
                          version=datetime.now().strftime('%y%m%d_%H%M%S.%f'),
                          project='Trans2D',
                          config=hparams)
@@ -29,7 +30,10 @@ if __name__ == '__main__':
 
     model = SequenceTransformerModule(hparams)
 
-    trainer = pl.Trainer(gpus=hparams.gpus,
+    trainer = pl.Trainer(
+                         accelerator=hparams.accelerator,
+                         devices=hparams.devices if torch.cuda.is_available() else 1,
+                         strategy=hparams.strategy if torch.cuda.is_available() else 'auto',
                          max_epochs=hparams.max_epochs,
                          logger=logger,
                          num_sanity_val_steps=0,

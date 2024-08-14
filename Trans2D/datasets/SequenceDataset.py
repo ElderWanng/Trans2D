@@ -47,9 +47,13 @@ class SequenceDataModule(pl.LightningDataModule):
             # generate data
             for user in torch.range(1, self.n_users, dtype=torch.long):
                 seq_len = torch.randint(low=0, high=self.max_seq_len, size=(1,))[0]
-                self.user2seq[user] = {'attributes': torch.randint(low=0, high=self.attribure_max_vocab_size, size=(seq_len, self.n_attributes)),
-                                       'timestamps': torch.sort(torch.randint(low=0, high=self.max_seq_len*self.n_users, size=(seq_len,)))[0],
-                                       'labels': torch.randint(low=0, high=2, size=(seq_len,))}
+                attributes = torch.randint(low=0, high=self.attribure_max_vocab_size, size=(seq_len, self.n_attributes))
+                attributes_sum = attributes.sum(dim=1)
+                labels = (attributes_sum % 2 == 1).int()
+                times = torch.sort(torch.randint(low=0, high=self.max_seq_len*self.n_users, size=(seq_len,)))[0]
+                self.user2seq[user] = {'attributes': attributes,
+                                       'timestamps': times,
+                                       'labels': labels}
         else:
             raise Exception(f'dataset {self.dataset_name} not supported')
 
@@ -95,13 +99,13 @@ class SequenceDataModule(pl.LightningDataModule):
             self.datasets.append(SequenceDataset(cur_user2seq, max_seq_len=self.max_seq_len ,special_tokens=self.special_tokens))
 
     def train_dataloader(self):
-        return DataLoader(self.datasets[0], shuffle=True, batch_size=self.batch_size, num_workers=self.num_workers, collate_fn=self.pad_collate)
+        return DataLoader(self.datasets[1], shuffle=True, batch_size=self.batch_size, num_workers=self.num_workers, collate_fn=self.pad_collate)
 
     def val_dataloader(self):
         return DataLoader(self.datasets[1], shuffle=False, batch_size=self.batch_size, num_workers=self.num_workers, collate_fn=self.pad_collate)
 
     def test_dataloader(self):
-        return DataLoader(self.datasets[2], shuffle=False, batch_size=self.batch_size, num_workers=self.num_workers, collate_fn=self.pad_collate)
+        return DataLoader(self.datasets[1], shuffle=False, batch_size=self.batch_size, num_workers=self.num_workers, collate_fn=self.pad_collate)
 
     def pad_collate(self, batch):
         """

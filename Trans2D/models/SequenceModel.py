@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
-from torchmetrics import RetrievalNormalizedDCG, RetrievalPrecision
+from torchmetrics import RetrievalNormalizedDCG, RetrievalPrecision, MetricCollection
 from transformers import BertConfig, BertModel
 
 from .Tokenizer import TensorTokenizer
-from .metrics import RetrievalHIT
+# from .metrics import RetrievalHIT
+from torchmetrics import RetrievalNormalizedDCG, RetrievalPrecision, RetrievalHitRate, AUROC, RetrievalMRR
 from .modeling_bert2D import BertModel2D
 
 
@@ -128,9 +129,12 @@ class SequenceTransformerModule(pl.LightningModule):
         self.learning_rate = hparams.learning_rate
         self.weight_decay = hparams.weight_decay
 
-        metrics = pl.metrics.MetricCollection(dict(**{f'NDCG@{k}': RetrievalNormalizedDCG(k=k) for k in self.K},
-                                                   **{f'Precision@{k}': RetrievalPrecision(k=k) for k in self.K},
-                                                   **{f'Hit@{k}': RetrievalHIT(k=k) for k in self.K}))
+        metrics = MetricCollection(dict(**{f'NDCG@{k}': RetrievalNormalizedDCG(top_k=k) for k in self.K},
+                                                   **{f'Precision@{k}': RetrievalPrecision(top_k=k) for k in self.K},
+                                                   **{f'Hit@{k}': RetrievalHitRate(top_k=k) for k in self.K},
+                                        **{'AUC': AUROC(task='binary')},
+                                        **{'MRR': RetrievalMRR()}
+                                        ))
         self.metrics = {'train': metrics.clone(), 'val': metrics.clone(), 'test': metrics.clone()}
 
 
@@ -140,6 +144,10 @@ class SequenceTransformerModule(pl.LightningModule):
     def step(self, batch, name):
         tokens, labels, prediction_mask = batch['attributes'], batch['labels'], batch['mask']
         indexes = torch.arange(labels.size(0)).unsqueeze(1).repeat(1, labels.size(1))
+        tokens = tokens.to(self.device)
+        labels = labels.to(self.device)
+        indexes = indexes.to(self.device)
+        prediction_mask = prediction_mask.to(self.device)
 
         logits = self(tokens)
 
@@ -151,7 +159,10 @@ class SequenceTransformerModule(pl.LightningModule):
         self.log(f'{name}/loss', loss)
 
         for metric_name in self.metrics[name]:
-            metric = self.metrics[name][metric_name](logits, labels.bool(), indexes)
+            if metric_name!='AUC':
+                metric = self.metrics[name][metric_name](logits, labels.bool(), indexes)
+            else:
+                metric = self.metrics[name][metric_name](logits, labels)
             self.log(f'{name}/{metric_name}', metric)
 
         return loss
